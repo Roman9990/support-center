@@ -1,182 +1,548 @@
-import asyncio
-import sqlite3
-import json
-import base64
-import os
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Центр Управления</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
 
-from aiogram import Bot, Dispatcher, F
-from aiogram.client.default import DefaultBotProperties
-from aiogram.filters import Command
-from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, WebAppInfo
-from aiogram.utils.keyboard import InlineKeyboardBuilder
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: linear-gradient(-45deg, #ee7752, #e73c7e, #23a6d5, #23d5ab);
+            background-size: 400% 400%;
+            animation: gradientBG 15s ease infinite;
+            min-height: 100vh;
+            overflow-x: hidden;
+            color: white;
+        }
 
-API_TOKEN = "8489240049:AAHtyPfco7jlIrydjE6ZWU64y3ABoSBKmBY"
-OWNER_ID = 5518423575
-DB_PATH = "bot.db"
-MINI_APP_URL = "https://roman9990.github.io/support-center/"
+        @keyframes gradientBG {
+            0% { background-position: 0% 50%; }
+            50% { background-position: 100% 50%; }
+            100% { background-position: 0% 50%; }
+        }
 
-bot = Bot(API_TOKEN, default=DefaultBotProperties(parse_mode="HTML"))
-dp = Dispatcher()
+        .floating-particles {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 1;
+        }
 
-def get_db():
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    return conn
+        .particle {
+            position: absolute;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 50%;
+            animation: float 20s infinite linear;
+        }
 
-def init_db():
-    if os.path.exists(DB_PATH):
-        os.remove(DB_PATH)
-    with get_db() as conn:
-        conn.execute("CREATE TABLE users (user_id INTEGER PRIMARY KEY, username TEXT, role TEXT DEFAULT 'user')")
-        conn.execute("CREATE TABLE admin_tags (admin_id INTEGER PRIMARY KEY, tag TEXT UNIQUE)")
-        conn.execute("CREATE TABLE user_tags (user_id INTEGER PRIMARY KEY, tag TEXT)")
-        conn.execute("CREATE TABLE active_chats (user_id INTEGER PRIMARY KEY, admin_id INTEGER)")
-        conn.execute("INSERT OR IGNORE INTO users(user_id,username,role) VALUES(?,?,?)", (OWNER_ID,"OWNER","owner"))
+        @keyframes float {
+            0% {
+                transform: translateY(100vh) scale(0);
+                opacity: 0;
+            }
+            10% {
+                opacity: 1;
+            }
+            90% {
+                opacity: 1;
+            }
+            100% {
+                transform: translateY(-100px) scale(1);
+                opacity: 0;
+            }
+        }
 
-def add_user(uid, username=None, role="user"):
-    with get_db() as conn:
-        conn.execute("INSERT OR REPLACE INTO users(user_id,username,role) VALUES(?,?,?)", (uid, username, role))
+        .container {
+            position: relative;
+            z-index: 2;
+            padding: 20px;
+            max-width: 1200px;
+            margin: 0 auto;
+        }
 
-def get_user_role(uid):
-    with get_db() as conn:
-        r = conn.execute("SELECT role FROM users WHERE user_id=?", (uid,)).fetchone()
-        return r["role"] if r else "user"
+        .header {
+            text-align: center;
+            margin-bottom: 40px;
+            opacity: 0;
+            animation: fadeInUp 1s ease-out forwards;
+        }
 
-def is_owner(uid): return uid==OWNER_ID
-def is_admin(uid): return get_user_role(uid) in ["owner","admin","moderator","support"]
+        .header-icon {
+            font-size: 4rem;
+            margin-bottom: 20px;
+            display: inline-block;
+            animation: bounce 2s ease-in-out infinite;
+        }
 
-def get_user_tag(uid):
-    with get_db() as conn:
-        r = conn.execute("SELECT tag FROM user_tags WHERE user_id=?", (uid,)).fetchone()
-        return r["tag"] if r else f"user{uid}"
+        @keyframes bounce {
+            0%, 20%, 50%, 80%, 100% {
+                transform: translateY(0);
+            }
+            40% {
+                transform: translateY(-20px);
+            }
+            60% {
+                transform: translateY(-10px);
+            }
+        }
 
-def get_admin_tag(aid):
-    with get_db() as conn:
-        r = conn.execute("SELECT tag FROM admin_tags WHERE admin_id=?", (aid,)).fetchone()
-        return r["tag"] if r else f"admin{aid}"
+        .header h1 {
+            font-size: 2.5rem;
+            font-weight: 800;
+            background: linear-gradient(45deg, #fff, #ff6b35, #f7931e, #fff);
+            background-size: 300% 300%;
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            animation: textShimmer 3s ease-in-out infinite;
+            margin-bottom: 15px;
+        }
 
-def get_admins():
-    with get_db() as conn:
-        rows = conn.execute("""
-            SELECT u.user_id,u.role,COALESCE(at.tag,'admin'||u.user_id) AS tag
-            FROM users u LEFT JOIN admin_tags at ON at.admin_id=u.user_id
-            WHERE u.role IN('owner','admin','moderator','support')
-            ORDER BY u.user_id
-        """).fetchall()
-    cols=["#ff6b35","#f7931e","#c44569","#546de5","#ff9ff3","#54a0ff"]
-    admins=[]
-    for i,r in enumerate(rows):
-        admins.append({
-            "id":r["user_id"],
-            "tag":r["tag"],
-            "status":"online" if i%2==0 else "offline",
-            "accent_color":cols[i%len(cols)],
-            "role":r["role"]
-        })
-    return admins
+        @keyframes textShimmer {
+            0%, 100% { background-position: 0% 50%; }
+            50% { background-position: 100% 50%; }
+        }
 
-def create_miniapp_url(uid):
-    admins=get_admins()
-    p={"admins":admins,"user":{"id":uid,"tag":get_user_tag(uid)},"config":{"show_tags":True}}
-    b=base64.b64encode(json.dumps(p,ensure_ascii=False).encode()).decode()
-    return f"{MINI_APP_URL}?data={b}"
+        .header p {
+            font-size: 1.1rem;
+            opacity: 0.9;
+            animation: typewriter 2s steps(40) 0.5s forwards;
+            border-right: 2px solid white;
+            white-space: nowrap;
+            overflow: hidden;
+            width: 0;
+            margin: 0 auto;
+        }
 
-def main_menu(uid):
-    kb=InlineKeyboardBuilder()
-    kb.button(text="🚀 Центр Поддержки", web_app=WebAppInfo(url=create_miniapp_url(uid)))
-    kb.button(text="👤 Профиль",callback_data="profile")
-    kb.button(text="🔄 Обновить",callback_data="refresh")
-    kb.adjust(1,2)
-    return kb.as_markup()
+        @keyframes typewriter {
+            from { width: 0; }
+            to { width: 100%; }
+        }
 
-@dp.message(Command("start"))
-async def cmd_start(m:Message):
-    add_user(m.from_user.id,m.from_user.username)
-    cnt=len(get_admins())
-    await m.answer(f"🚀 Привет! Админов: {cnt}",reply_markup=main_menu(m.from_user.id))
+        .status-indicator {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 15px;
+            margin: 30px 0;
+            opacity: 0;
+            animation: fadeInUp 1s ease-out 1.5s forwards;
+        }
 
-@dp.message(Command("add_admin"))
-async def cmd_add_admin(m:Message):
-    if not is_owner(m.from_user.id):
-        await m.answer("❌ Нет прав",reply_markup=main_menu(m.from_user.id));return
-    parts=m.text.split()
-    if len(parts)<3:
-        await m.answer("📝 /add_admin USER_ID ТЕГ");return
-    try:
-        uid=int(parts[1]); tag=parts[2]
-        with get_db() as c:
-            c.execute("INSERT OR REPLACE INTO users(user_id,role) VALUES(?,?)",(uid,"support"))
-            c.execute("INSERT OR REPLACE INTO admin_tags(admin_id,tag) VALUES(?,?)",(uid,tag))
-            c.execute("INSERT OR REPLACE INTO user_tags(user_id,tag) VALUES(?,?,?)",(uid,tag))
-        await m.answer(f"✅ Добавлен #{tag}",reply_markup=main_menu(m.from_user.id))
-    except Exception as e:
-        await m.answer(f"❌ {e}")
+        .status-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            background: rgba(255, 255, 255, 0.1);
+            padding: 10px 20px;
+            border-radius: 25px;
+            backdrop-filter: blur(10px);
+        }
 
-@dp.message(Command("list_admins"))
-async def cmd_list(m:Message):
-    a=get_admins()
-    if not a: await m.answer("📋 Нет админов",reply_markup=main_menu(m.from_user.id));return
-    txt="🚀 Админы:\n"
-    for x in a: txt+=f"• #{x['tag']} (ID {x['id']})\n"
-    await m.answer(txt,reply_markup=main_menu(m.from_user.id))
+        .pulse-dot {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background: #00ff88;
+            animation: pulse 2s ease-in-out infinite;
+        }
 
-@dp.callback_query(F.data=="refresh")
-async def cb_ref(c:CallbackQuery):
-    await c.message.edit_text("🔄 Обновлено",reply_markup=main_menu(c.from_user.id)); await c.answer()
+        @keyframes pulse {
+            0%, 100% {
+                opacity: 1;
+                transform: scale(1);
+            }
+            50% {
+                opacity: 0.5;
+                transform: scale(1.2);
+            }
+        }
 
-@dp.callback_query(F.data=="profile")
-async def cb_pr(c:CallbackQuery):
-    u=c.from_user.id; await c.message.edit_text(
-        f"👤 ID: {u}\nТег: #{get_user_tag(u)}\nРоль: {get_user_role(u)}",
-        reply_markup=main_menu(u)); await c.answer()
+        .admins-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 25px;
+            margin-top: 40px;
+            opacity: 0;
+            animation: fadeInUp 1s ease-out 2s forwards;
+        }
 
-@dp.message(F.web_app_data)
-async def handle_webapp(m:Message):
-    d=json.loads(m.web_app_data.data)
-    if d.get("action")=="select_admin":
-        aid=d["admin_id"]; tag=d["admin_tag"]
-        # notify admin
-        kb=InlineKeyboardBuilder()
-        kb.button(text="✅ Принять",callback_data=f"accept_{m.from_user.id}")
-        kb.button(text="❌ Отклонить",callback_data=f"decline_{m.from_user.id}")
-        await bot.send_message(aid,
-            f"🔔 Новый запрос от #{get_user_tag(m.from_user.id)} (ID {m.from_user.id})",
-            reply_markup=kb.as_markup())
-        await m.answer("✅ Запрос отправлен")
+        .admin-card {
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 20px;
+            padding: 30px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            transform: translateY(20px);
+            opacity: 0;
+            position: relative;
+            overflow: hidden;
+        }
 
-@dp.callback_query(F.data.startswith("accept_"))
-async def cb_accept(c:CallbackQuery):
-    uid=int(c.data.split("_")[1]); aid=c.from_user.id; tag=get_admin_tag(aid)
-    kb=InlineKeyboardBuilder()
-    kb.button(text="✉️ Написать",callback_data=f"chat_{aid}")
-    kb.button(text="🔚 Завершить",callback_data=f"end_{aid}")
-    await bot.send_message(uid,f"🌅 Вас унес в закат телехранитель #{tag}",reply_markup=kb.as_markup())
-    await c.answer()
+        .admin-card::before {
+            content: '';
+            position: absolute;
+            top: -2px;
+            left: -2px;
+            right: -2px;
+            bottom: -2px;
+            background: linear-gradient(45deg, #ff6b35, #f7931e, #c44569, #546de5);
+            border-radius: 22px;
+            z-index: -1;
+            opacity: 0;
+            transition: opacity 0.3s;
+        }
 
-@dp.callback_query(F.data.startswith("decline_"))
-async def cb_decline(c:CallbackQuery):
-    uid=int(c.data.split("_")[1]); tag=get_admin_tag(c.from_user.id)
-    await bot.send_message(uid,f"💔 Телехранитель #{tag} отказался",reply_markup=main_menu(uid))
-    await c.answer()
+        .admin-card:hover::before {
+            opacity: 0.7;
+        }
 
-@dp.callback_query(F.data.startswith("chat_"))
-async def cb_chat(c:CallbackQuery):
-    await c.message.answer("✉️ Напишите сообщение:")
-    await c.answer()
+        .admin-card:hover {
+            transform: translateY(-15px) scale(1.02);
+            box-shadow: 0 25px 50px rgba(0, 0, 0, 0.3);
+        }
 
-@dp.callback_query(F.data.startswith("end_"))
-async def cb_end(c:CallbackQuery):
-    aid=int(c.data.split("_")[1]); uid=c.from_user.id; tag=get_admin_tag(aid)
-    with get_db() as conn: conn.execute("DELETE FROM active_chats WHERE user_id=?", (uid,))
-    kb=InlineKeyboardBuilder()
-    kb.button("🚀 Новый",callback_data="refresh")
-    kb.button("😴 Отдохнуть",callback_data="profile")
-    await c.message.answer(f"🌌 Вы кинули в небеса телехранителя #{tag}",reply_markup=kb.as_markup())
-    await c.answer()
+        .admin-card.animate-in {
+            opacity: 1;
+            transform: translateY(0);
+        }
 
-async def main():
-    init_db()
-    await dp.start_polling(bot)
+        .admin-avatar {
+            width: 80px;
+            height: 80px;
+            margin: 0 auto 20px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 2.5rem;
+            position: relative;
+            transition: transform 0.3s ease;
+        }
 
-if __name__=="__main__":
-    asyncio.run(main())
+        .admin-avatar::after {
+            content: '';
+            position: absolute;
+            inset: -5px;
+            border-radius: 50%;
+            background: linear-gradient(45deg, transparent, rgba(255, 255, 255, 0.3), transparent);
+            animation: rotate 3s linear infinite;
+        }
+
+        @keyframes rotate {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
+
+        .admin-card:hover .admin-avatar {
+            transform: scale(1.1) rotateY(180deg);
+        }
+
+        .admin-tag {
+            font-size: 1.5rem;
+            font-weight: 800;
+            margin-bottom: 15px;
+            background: linear-gradient(45deg, #fff, #ff6b35);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .admin-status {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+            margin-bottom: 15px;
+            font-weight: 600;
+        }
+
+        .status-dot {
+            width: 14px;
+            height: 14px;
+            border-radius: 50%;
+        }
+
+        .status-online {
+            background: #00ff88;
+            box-shadow: 0 0 20px #00ff88;
+            animation: pulse 2s ease-in-out infinite;
+        }
+
+        .status-offline {
+            background: #ff4757;
+            box-shadow: 0 0 20px #ff4757;
+        }
+
+        .admin-role {
+            font-size: 0.9rem;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            background: rgba(255, 255, 255, 0.2);
+            padding: 8px 16px;
+            border-radius: 20px;
+            display: inline-block;
+            font-weight: 600;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 60px 20px;
+        }
+
+        .loading-spinner {
+            width: 60px;
+            height: 60px;
+            border: 4px solid rgba(255, 255, 255, 0.1);
+            border-top: 4px solid white;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 20px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 80px 20px;
+            opacity: 0;
+            animation: fadeInUp 1s ease-out forwards;
+        }
+
+        .empty-icon {
+            font-size: 4rem;
+            margin-bottom: 20px;
+            opacity: 0.5;
+            animation: float-gentle 3s ease-in-out infinite;
+        }
+
+        @keyframes float-gentle {
+            0%, 100% { transform: translateY(0px); }
+            50% { transform: translateY(-10px); }
+        }
+
+        @keyframes fadeInUp {
+            from {
+                opacity: 0;
+                transform: translateY(30px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .wave {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            width: 100%;
+            height: 100px;
+            background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1200 120'%3E%3Cpath d='M321.39,56.44c58-10.79,114.16-30.13,172-41.86,82.39-16.72,168.19-17.73,250.45-.39C823.78,31,906.67,72,985.66,92.83c70.05,18.48,146.53,26.09,214.34,3V0H0V27.35A600.21,600.21,0,0,0,321.39,56.44Z' fill='rgba(255,255,255,0.1)'/%3E%3C/svg%3E") repeat-x;
+            animation: wave 10s ease-in-out infinite;
+        }
+
+        @keyframes wave {
+            0%, 100% {
+                background-position-x: 0px;
+            }
+            50% {
+                background-position-x: 1200px;
+            }
+        }
+
+        @media (max-width: 768px) {
+            .header h1 {
+                font-size: 2rem;
+            }
+            
+            .admins-grid {
+                grid-template-columns: 1fr;
+                gap: 20px;
+            }
+            
+            .admin-card {
+                padding: 25px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="floating-particles" id="particles"></div>
+    <div class="wave"></div>
+    
+    <div class="container">
+        <header class="header">
+            <div class="header-icon">🚀</div>
+            <h1>Центр Управления</h1>
+            <p>Мониторинг активности команды в реальном времени</p>
+        </header>
+
+        <div class="status-indicator">
+            <div class="status-item">
+                <div class="pulse-dot"></div>
+                <span>Система активна</span>
+            </div>
+            <div class="status-item">
+                <span id="admin-count">0 админов</span>
+            </div>
+        </div>
+
+        <div id="loading" class="loading">
+            <div class="loading-spinner"></div>
+            <p>Загрузка администраторов...</p>
+        </div>
+
+        <div id="empty-state" class="empty-state" style="display: none;">
+            <div class="empty-icon">👨‍💼</div>
+            <h3>Нет доступных администраторов</h3>
+            <p>Все администраторы сейчас недоступны</p>
+        </div>
+
+        <div id="admins-grid" class="admins-grid" style="display: none;"></div>
+    </div>
+
+    <script>
+        // Создание плавающих частиц
+        function createParticles() {
+            const particles = document.getElementById('particles');
+            for (let i = 0; i < 50; i++) {
+                const particle = document.createElement('div');
+                particle.className = 'particle';
+                particle.style.left = Math.random() * 100 + '%';
+                particle.style.width = particle.style.height = Math.random() * 20 + 5 + 'px';
+                particle.style.animationDelay = Math.random() * 20 + 's';
+                particle.style.animationDuration = (Math.random() * 20 + 10) + 's';
+                particles.appendChild(particle);
+            }
+        }
+
+        // Инициализация Telegram Web App
+        document.addEventListener('DOMContentLoaded', () => {
+            if (window.Telegram?.WebApp) {
+                Telegram.WebApp.ready();
+                Telegram.WebApp.expand();
+                Telegram.WebApp.BackButton.show();
+                Telegram.WebApp.BackButton.onClick(() => Telegram.WebApp.close());
+            }
+            
+            createParticles();
+            setTimeout(loadAdmins, 1000); // Задержка для красивой анимации
+        });
+
+        function loadAdmins() {
+            const params = new URLSearchParams(window.location.search);
+            const data = params.get('data');
+            
+            if (!data) {
+                showEmptyState();
+                return;
+            }
+
+            try {
+                const decoded = atob(data);
+                const json = JSON.parse(decoded);
+                const admins = json.admins || [];
+                
+                if (!admins.length) {
+                    showEmptyState();
+                    return;
+                }
+
+                renderAdmins(admins);
+            } catch (e) {
+                console.error('Failed to load admins:', e);
+                showEmptyState();
+            }
+        }
+
+        function renderAdmins(admins) {
+            document.getElementById('loading').style.display = 'none';
+            document.getElementById('admin-count').textContent = `${admins.length} админов`;
+            
+            const grid = document.getElementById('admins-grid');
+            grid.style.display = 'grid';
+            
+            admins.forEach((admin, index) => {
+                const card = document.createElement('div');
+                card.className = 'admin-card';
+                
+                const isOnline = admin.status === 'online';
+                const statusClass = isOnline ? 'status-online' : 'status-offline';
+                
+                card.innerHTML = `
+                    <div class="admin-avatar" style="background: ${admin.accent_color || '#ff6b35'};">
+                        👤
+                    </div>
+                    <div class="admin-tag">#${admin.tag}</div>
+                    <div class="admin-status">
+                        <span class="status-dot ${statusClass}"></span>
+                        <span>${isOnline ? 'В сети' : 'Не в сети'}</span>
+                    </div>
+                    <div class="admin-role">${translateRole(admin.role)}</div>
+                `;
+
+                card.addEventListener('click', () => {
+                    // Анимация нажатия
+                    card.style.transform = 'scale(0.95)';
+                    setTimeout(() => {
+                        card.style.transform = '';
+                    }, 150);
+
+                    const selection = {
+                        action: 'select_admin',
+                        admin_id: admin.id,
+                        admin_tag: admin.tag
+                    };
+
+                    if (window.Telegram?.WebApp) {
+                        Telegram.WebApp.sendData(JSON.stringify(selection));
+                        Telegram.WebApp.HapticFeedback.impactOccurred('light');
+                    } else {
+                        alert(`Вы выбрали администратора #${admin.tag}`);
+                    }
+                });
+
+                grid.appendChild(card);
+
+                // Анимация появления карточек с задержкой
+                setTimeout(() => {
+                    card.classList.add('animate-in');
+                }, index * 200);
+            });
+        }
+
+        function showEmptyState() {
+            document.getElementById('loading').style.display = 'none';
+            document.getElementById('empty-state').style.display = 'block';
+        }
+
+        function translateRole(role) {
+            const roles = {
+                'owner': 'Владелец',
+                'admin': 'Администратор',
+                'moderator': 'Модератор',
+                'support': 'Поддержка'
+            };
+            return roles[role] || role;
+        }
+    </script>
+</body>
+</html>
+
