@@ -17,18 +17,20 @@
     .tab{padding:8px 16px;cursor:pointer;border-radius:8px;transition:background .3s}
     .tab.active{background:rgba(255,255,255,0.2)}
     .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:16px;opacity:0;animation:fadeIn 1s .5s forwards}
-    .card{background:rgba(255,255,255,0.1);border-radius:12px;padding:20px;cursor:pointer;transition:transform .3s}
+    .card{background:rgba(255,255,255,0.1);border-radius:12px;padding:20px;cursor:default;position:relative;overflow:hidden;transition:transform .3s}
     .card:hover{transform:scale(1.05)}
-    .tag{font-weight:700;margin-bottom:8px}
-    .status{display:flex;align-items:center;justify-content:center;gap:8px;margin-bottom:8px}
+    .tag{font-weight:700;margin-bottom:8px;font-size:1.1rem}
+    .status{display:flex;align-items:center;justify-content:center;gap:8px;margin-bottom:12px}
     .dot{width:10px;height:10px;border-radius:50%;animation:pulse 2s infinite}
     @keyframes pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.4)}}
     .online .dot{background:#4caf50}
     .offline .dot{background:#f44336;animation:none}
-    .role{opacity:.8;font-size:.9rem;text-transform:uppercase}
+    .role{opacity:.8;font-size:.9rem;text-transform:uppercase;margin-bottom:12px}
+    .btn{display:inline-block;padding:8px 16px;border-radius:8px;background:#ff004f;color:#fff;text-decoration:none;transition:background .3s}
+    .btn:hover{background:#e00047}
     .unavail{margin-top:30px;opacity:0;animation:fadeIn 1s .7s forwards}
     .unavail ul{list-style:none;display:flex;flex-wrap:wrap;gap:10px;justify-content:center}
-    .unavail li{background:rgba(255,255,255,0.1);padding:6px 12px;border-radius:8px}
+    .unavail li{background:rgba(255,255,255,0.1);padding:6px 12px;border-radius:8px;font-size:.9rem}
   </style>
 </head>
 <body>
@@ -47,45 +49,43 @@
   <script>
     document.addEventListener('DOMContentLoaded',()=>{
       if(window.Telegram?.WebApp) Telegram.WebApp.ready();
-      document.getElementById('tab-available').onclick=()=>showTab('available');
-      document.getElementById('tab-unavailable').onclick=()=>showTab('unavailable');
+      ['available','unavailable'].forEach(id=>{
+        document.getElementById('tab-'+id).onclick=()=>{
+          document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
+          document.getElementById('tab-'+id).classList.add('active');
+          document.getElementById('available').style.display = id==='available'?'grid':'none';
+          document.getElementById('unavailable').style.display = id==='unavailable'?'block':'none';
+        };
+      });
       load();
     });
-    function showTab(id){
-      document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
-      document.getElementById('tab-'+id).classList.add('active');
-      document.getElementById('available').style.display= id==='available'?'grid':'none';
-      document.getElementById('unavailable').style.display= id==='unavailable'?'block':'none';
-    }
     function load(){
       const p=new URLSearchParams(location.search).get('data');
-      if(!p){render([]);return;}
-      let admins; try{admins=JSON.parse(atob(p)).admins||[]}catch{admins=[]}
-      const avail=admins.filter(a=>a.status==='online');
-      const un=admins.filter(a=>a.status!=='online');
-      render(avail); renderUn(un);
+      if(!p){renderAvailable([]);renderUnavailable([]);return;}
+      let a=[]; try{a=JSON.parse(atob(p)).admins||[]}catch{}
+      const avail=a.filter(x=>x.status==='online'),un=a.filter(x=>x.status!=='online');
+      renderAvailable(avail);renderUnavailable(un);
     }
-    function render(av){
-      const c=document.getElementById('available'); c.innerHTML='';
-      if(!av.length){c.innerHTML='<p>Нет онлайн админов</p>';return}
-      av.forEach(a=>{
-        const d=document.createElement('div');d.className='card '+a.status;
-        d.innerHTML=`<div class="tag">#${a.tag}</div>
-                     <div class="status ${a.status}"><span class="dot"></span>${a.status==='online'?'В сети':'Не в сети'}</div>
-                     <div class="role">${translate(a.role)}</div>`;
-        d.onclick=()=>{
-          const sel={action:'select_admin',admin_id:a.id,admin_tag:a.tag};
-          Telegram.WebApp.sendData(JSON.stringify(sel));
-        };
+    function renderAvailable(a){
+      const c=document.getElementById('available');c.innerHTML='';
+      if(!a.length){c.innerHTML='<p>Нет онлайн админов</p>';return;}
+      a.forEach(x=>{
+        const d=document.createElement('div');d.className='card '+x.status;
+        d.innerHTML=`<div class="tag">#${x.tag}</div>
+                     <div class="status ${x.status}"><span class="dot"></span>${x.status==='online'?'В сети':'Не в сети'}</div>
+                     <div class="role">${translate(x.role)}</div>
+                     <a href="#" class="btn" onclick="select(${x.id},'${x.tag}');return false;">Выбрать</a>`;
         c.appendChild(d);
       });
     }
-    function renderUn(un){
-      const ul=document.getElementById('unlist'); ul.innerHTML='';
-      if(!un.length){ul.innerHTML='<li>Пусто</li>'}
-      un.forEach(a=>{
-        const li=document.createElement('li');li.textContent='#'+a.tag;ul.appendChild(li);
-      });
+    function renderUnavailable(u){
+      const ul=document.getElementById('unlist');ul.innerHTML='';
+      if(!u.length){ul.innerHTML='<li>Пусто</li>'}
+      u.forEach(x=>{const li=document.createElement('li');li.textContent='#'+x.tag;ul.append(li)});
+    }
+    function select(id,tag){
+      const d={action:'select_admin',admin_id:id,admin_tag:tag};
+      Telegram.WebApp.sendData(JSON.stringify(d));
     }
     function translate(r){
       return{'owner':'Владелец','admin':'Администратор','moderator':'Модератор','support':'Поддержка'}[r]||r;
