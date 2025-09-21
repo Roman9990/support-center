@@ -1,196 +1,182 @@
-<!DOCTYPE html>
-<html lang="ru">
-<head>
-  <meta charset="utf-8"/>
-  <meta name="viewport" content="width=device-width, initial-scale=1"/>
-  <title>🚀 Центр Поддержки</title>
-  <script src="https://telegram.org/js/telegram-web-app.js"></script>
-  <style>
-    body {
-      margin: 0;
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-      background: linear-gradient(135deg, #ff6b35, #f7931e, #c44569, #546de5, #574b90);
-      color: white;
-      padding: 20px;
-      min-height: 100vh;
-    }
-    .header { text-align: center; margin-bottom: 30px; }
-    .logo { font-size: 48px; margin-bottom: 10px; }
-    .title { font-size: 24px; font-weight: bold; margin-bottom: 8px; }
-    .subtitle { opacity: 0.9; margin-bottom: 20px; }
-    .loading { text-align: center; padding: 40px 0; }
-    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; }
-    .card {
-      background: rgba(255,255,255,0.1);
-      border: 1px solid rgba(255,255,255,0.2);
-      border-radius: 16px;
-      padding: 20px;
-      cursor: pointer;
-      transition: 0.3s;
-      text-align: center;
-    }
-    .card:hover { transform: translateY(-4px); background: rgba(255,255,255,0.15); }
-    .avatar {
-      width: 60px; height: 60px; border-radius: 50%;
-      margin: 0 auto 12px; display: flex; align-items: center; justify-content: center;
-      font-size: 24px;
-    }
-    .tag { font-weight: bold; margin-bottom: 8px; font-size: 18px; }
-    .status { display: flex; align-items: center; justify-content: center; gap: 8px; margin-bottom: 8px; }
-    .dot { width: 8px; height: 8px; border-radius: 50%; }
-    .role { opacity: 0.8; font-size: 14px; }
-    .empty { text-align: center; padding: 40px 0; }
-    .show { display: block; }
-    .hide { display: none; }
-  </style>
-</head>
-<body>
-  <div class="header">
-    <div class="logo">🚀</div>
-    <div class="title">Центр Поддержки</div>
-    <div class="subtitle">Выберите администратора</div>
-  </div>
+import asyncio
+import sqlite3
+import json
+import base64
+import os
 
-  <div id="loading" class="loading">⏳ Загрузка...</div>
-  <div id="grid" class="grid hide"></div>
-  <div id="empty" class="empty hide">
-    <div style="font-size: 48px; margin-bottom: 12px;">👨‍💼</div>
-    <div>Администраторы недоступны</div>
-  </div>
+from aiogram import Bot, Dispatcher, F
+from aiogram.client.default import DefaultBotProperties
+from aiogram.filters import Command
+from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, WebAppInfo
+from aiogram.utils.keyboard import InlineKeyboardBuilder
 
-  <script>
-    console.log('🚀 Support Center V2 Loading...');
+API_TOKEN = "8489240049:AAHtyPfco7jlIrydjE6ZWU64y3ABoSBKmBY"
+OWNER_ID = 5518423575
+DB_PATH = "bot.db"
+MINI_APP_URL = "https://roman9990.github.io/support-center/"
 
-    class SimpleSupport {
-      constructor() {
-        this.init();
-      }
+bot = Bot(API_TOKEN, default=DefaultBotProperties(parse_mode="HTML"))
+dp = Dispatcher()
 
-      init() {
-        if (window.Telegram?.WebApp) {
-          Telegram.WebApp.ready();
-          Telegram.WebApp.expand();
-          Telegram.WebApp.BackButton.show();
-          Telegram.WebApp.BackButton.onClick(() => Telegram.WebApp.close());
-        }
-        setTimeout(() => this.loadData(), 500);
-      }
+def get_db():
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    return conn
 
-      loadData() {
-        console.log('📊 Loading admin data...');
-        
-        try {
-          const urlParams = new URLSearchParams(window.location.search);
-          const dataParam = urlParams.get('data');
-          
-          console.log('🔍 Data param found:', !!dataParam);
-          
-          if (!dataParam) {
-            console.log('❌ No data parameter');
-            this.showEmpty();
-            return;
-          }
+def init_db():
+    if os.path.exists(DB_PATH):
+        os.remove(DB_PATH)
+    with get_db() as conn:
+        conn.execute("CREATE TABLE users (user_id INTEGER PRIMARY KEY, username TEXT, role TEXT DEFAULT 'user')")
+        conn.execute("CREATE TABLE admin_tags (admin_id INTEGER PRIMARY KEY, tag TEXT UNIQUE)")
+        conn.execute("CREATE TABLE user_tags (user_id INTEGER PRIMARY KEY, tag TEXT)")
+        conn.execute("CREATE TABLE active_chats (user_id INTEGER PRIMARY KEY, admin_id INTEGER)")
+        conn.execute("INSERT OR IGNORE INTO users(user_id,username,role) VALUES(?,?,?)", (OWNER_ID,"OWNER","owner"))
 
-          const decoded = atob(dataParam);
-          const payload = JSON.parse(decoded);
-          const admins = payload.admins || [];
-          
-          console.log('👥 Loaded admins:', admins.length);
-          console.log('📋 Admins data:', admins);
+def add_user(uid, username=None, role="user"):
+    with get_db() as conn:
+        conn.execute("INSERT OR REPLACE INTO users(user_id,username,role) VALUES(?,?,?)", (uid, username, role))
 
-          if (admins.length === 0) {
-            this.showEmpty();
-            return;
-          }
+def get_user_role(uid):
+    with get_db() as conn:
+        r = conn.execute("SELECT role FROM users WHERE user_id=?", (uid,)).fetchone()
+        return r["role"] if r else "user"
 
-          this.renderAdmins(admins);
-          
-        } catch (error) {
-          console.error('❌ Error:', error);
-          this.showEmpty();
-        }
-      }
+def is_owner(uid): return uid==OWNER_ID
+def is_admin(uid): return get_user_role(uid) in ["owner","admin","moderator","support"]
 
-      renderAdmins(admins) {
-        console.log('🎨 Rendering admins...');
-        
-        const loading = document.getElementById('loading');
-        const grid = document.getElementById('grid');
-        const empty = document.getElementById('empty');
-        
-        loading.classList.add('hide');
-        empty.classList.add('hide');
-        
-        grid.innerHTML = '';
-        
-        admins.forEach(admin => {
-          const card = this.createCard(admin);
-          grid.appendChild(card);
-        });
-        
-        grid.classList.remove('hide');
-        grid.classList.add('show');
-        
-        console.log('✅ Admins rendered successfully!');
-      }
+def get_user_tag(uid):
+    with get_db() as conn:
+        r = conn.execute("SELECT tag FROM user_tags WHERE user_id=?", (uid,)).fetchone()
+        return r["tag"] if r else f"user{uid}"
 
-      createCard(admin) {
-        const card = document.createElement('div');
-        card.className = 'card';
-        
-        const isOnline = admin.status === 'online';
-        const statusColor = isOnline ? '#2ecc71' : '#95a5a6';
-        const statusText = isOnline ? 'Онлайн' : 'Оффлайн';
-        
-        card.innerHTML = `
-          <div class="avatar" style="background: ${admin.accent_color || '#ff6b35'};">👨‍💼</div>
-          <div class="tag">#${admin.tag}</div>
-          <div class="status">
-            <div class="dot" style="background: ${statusColor};"></div>
-            <span>${statusText}</span>
-          </div>
-          <div class="role">${this.translateRole(admin.role)}</div>
-        `;
-        
-        card.addEventListener('click', () => {
-          console.log('🎯 Selected admin:', admin);
-          this.selectAdmin(admin);
-        });
-        
-        return card;
-      }
+def get_admin_tag(aid):
+    with get_db() as conn:
+        r = conn.execute("SELECT tag FROM admin_tags WHERE admin_id=?", (aid,)).fetchone()
+        return r["tag"] if r else f"admin{aid}"
 
-      translateRole(role) {
-        const roles = { owner: 'Владелец', admin: 'Администратор', moderator: 'Модератор', support: 'Поддержка' };
-        return roles[role] || role;
-      }
+def get_admins():
+    with get_db() as conn:
+        rows = conn.execute("""
+            SELECT u.user_id,u.role,COALESCE(at.tag,'admin'||u.user_id) AS tag
+            FROM users u LEFT JOIN admin_tags at ON at.admin_id=u.user_id
+            WHERE u.role IN('owner','admin','moderator','support')
+            ORDER BY u.user_id
+        """).fetchall()
+    cols=["#ff6b35","#f7931e","#c44569","#546de5","#ff9ff3","#54a0ff"]
+    admins=[]
+    for i,r in enumerate(rows):
+        admins.append({
+            "id":r["user_id"],
+            "tag":r["tag"],
+            "status":"online" if i%2==0 else "offline",
+            "accent_color":cols[i%len(cols)],
+            "role":r["role"]
+        })
+    return admins
 
-      selectAdmin(admin) {
-        const data = {
-          action: 'select_admin',
-          admin_id: admin.id,
-          admin_tag: admin.tag,
-          timestamp: Date.now()
-        };
-        
-        if (window.Telegram?.WebApp) {
-          Telegram.WebApp.sendData(JSON.stringify(data));
-        } else {
-          alert(`Выбран: #${admin.tag}`);
-        }
-      }
+def create_miniapp_url(uid):
+    admins=get_admins()
+    p={"admins":admins,"user":{"id":uid,"tag":get_user_tag(uid)},"config":{"show_tags":True}}
+    b=base64.b64encode(json.dumps(p,ensure_ascii=False).encode()).decode()
+    return f"{MINI_APP_URL}?data={b}"
 
-      showEmpty() {
-        document.getElementById('loading').classList.add('hide');
-        document.getElementById('grid').classList.add('hide');
-        document.getElementById('empty').classList.remove('hide');
-      }
-    }
+def main_menu(uid):
+    kb=InlineKeyboardBuilder()
+    kb.button(text="🚀 Центр Поддержки", web_app=WebAppInfo(url=create_miniapp_url(uid)))
+    kb.button(text="👤 Профиль",callback_data="profile")
+    kb.button(text="🔄 Обновить",callback_data="refresh")
+    kb.adjust(1,2)
+    return kb.as_markup()
 
-    document.addEventListener('DOMContentLoaded', () => {
-      console.log('🚀 DOM ready, starting app...');
-      new SimpleSupport();
-    });
-  </script>
-</body>
-</html>
+@dp.message(Command("start"))
+async def cmd_start(m:Message):
+    add_user(m.from_user.id,m.from_user.username)
+    cnt=len(get_admins())
+    await m.answer(f"🚀 Привет! Админов: {cnt}",reply_markup=main_menu(m.from_user.id))
+
+@dp.message(Command("add_admin"))
+async def cmd_add_admin(m:Message):
+    if not is_owner(m.from_user.id):
+        await m.answer("❌ Нет прав",reply_markup=main_menu(m.from_user.id));return
+    parts=m.text.split()
+    if len(parts)<3:
+        await m.answer("📝 /add_admin USER_ID ТЕГ");return
+    try:
+        uid=int(parts[1]); tag=parts[2]
+        with get_db() as c:
+            c.execute("INSERT OR REPLACE INTO users(user_id,role) VALUES(?,?)",(uid,"support"))
+            c.execute("INSERT OR REPLACE INTO admin_tags(admin_id,tag) VALUES(?,?)",(uid,tag))
+            c.execute("INSERT OR REPLACE INTO user_tags(user_id,tag) VALUES(?,?,?)",(uid,tag))
+        await m.answer(f"✅ Добавлен #{tag}",reply_markup=main_menu(m.from_user.id))
+    except Exception as e:
+        await m.answer(f"❌ {e}")
+
+@dp.message(Command("list_admins"))
+async def cmd_list(m:Message):
+    a=get_admins()
+    if not a: await m.answer("📋 Нет админов",reply_markup=main_menu(m.from_user.id));return
+    txt="🚀 Админы:\n"
+    for x in a: txt+=f"• #{x['tag']} (ID {x['id']})\n"
+    await m.answer(txt,reply_markup=main_menu(m.from_user.id))
+
+@dp.callback_query(F.data=="refresh")
+async def cb_ref(c:CallbackQuery):
+    await c.message.edit_text("🔄 Обновлено",reply_markup=main_menu(c.from_user.id)); await c.answer()
+
+@dp.callback_query(F.data=="profile")
+async def cb_pr(c:CallbackQuery):
+    u=c.from_user.id; await c.message.edit_text(
+        f"👤 ID: {u}\nТег: #{get_user_tag(u)}\nРоль: {get_user_role(u)}",
+        reply_markup=main_menu(u)); await c.answer()
+
+@dp.message(F.web_app_data)
+async def handle_webapp(m:Message):
+    d=json.loads(m.web_app_data.data)
+    if d.get("action")=="select_admin":
+        aid=d["admin_id"]; tag=d["admin_tag"]
+        # notify admin
+        kb=InlineKeyboardBuilder()
+        kb.button(text="✅ Принять",callback_data=f"accept_{m.from_user.id}")
+        kb.button(text="❌ Отклонить",callback_data=f"decline_{m.from_user.id}")
+        await bot.send_message(aid,
+            f"🔔 Новый запрос от #{get_user_tag(m.from_user.id)} (ID {m.from_user.id})",
+            reply_markup=kb.as_markup())
+        await m.answer("✅ Запрос отправлен")
+
+@dp.callback_query(F.data.startswith("accept_"))
+async def cb_accept(c:CallbackQuery):
+    uid=int(c.data.split("_")[1]); aid=c.from_user.id; tag=get_admin_tag(aid)
+    kb=InlineKeyboardBuilder()
+    kb.button(text="✉️ Написать",callback_data=f"chat_{aid}")
+    kb.button(text="🔚 Завершить",callback_data=f"end_{aid}")
+    await bot.send_message(uid,f"🌅 Вас унес в закат телехранитель #{tag}",reply_markup=kb.as_markup())
+    await c.answer()
+
+@dp.callback_query(F.data.startswith("decline_"))
+async def cb_decline(c:CallbackQuery):
+    uid=int(c.data.split("_")[1]); tag=get_admin_tag(c.from_user.id)
+    await bot.send_message(uid,f"💔 Телехранитель #{tag} отказался",reply_markup=main_menu(uid))
+    await c.answer()
+
+@dp.callback_query(F.data.startswith("chat_"))
+async def cb_chat(c:CallbackQuery):
+    await c.message.answer("✉️ Напишите сообщение:")
+    await c.answer()
+
+@dp.callback_query(F.data.startswith("end_"))
+async def cb_end(c:CallbackQuery):
+    aid=int(c.data.split("_")[1]); uid=c.from_user.id; tag=get_admin_tag(aid)
+    with get_db() as conn: conn.execute("DELETE FROM active_chats WHERE user_id=?", (uid,))
+    kb=InlineKeyboardBuilder()
+    kb.button("🚀 Новый",callback_data="refresh")
+    kb.button("😴 Отдохнуть",callback_data="profile")
+    await c.message.answer(f"🌌 Вы кинули в небеса телехранителя #{tag}",reply_markup=kb.as_markup())
+    await c.answer()
+
+async def main():
+    init_db()
+    await dp.start_polling(bot)
+
+if __name__=="__main__":
+    asyncio.run(main())
